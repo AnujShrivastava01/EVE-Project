@@ -35,3 +35,6 @@ def get_current_user(
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
+
+
+CacheDep = Annotated[Cache, Depends(get_cache)]
