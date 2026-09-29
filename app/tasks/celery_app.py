@@ -1,12 +1,22 @@
 """Celery application: broker/result backend = Redis. Also defines the periodic schedule."""
 
+from typing import Any
+
 from celery import Celery
+from celery.signals import setup_logging as celery_setup_logging
 
 from app.core.config import get_settings
 from app.core.logging import setup_logging
 
 settings = get_settings()
-setup_logging(settings.log_level)
+
+
+@celery_setup_logging.connect
+def configure_worker_logging(**_: Any) -> None:
+    """Runs only inside worker/beat processes; connecting to this signal stops Celery from
+    installing its own log format, so worker logs are the same JSON as the API's."""
+    setup_logging(settings.log_level)
+
 
 celery_app = Celery(
     "eve",
@@ -24,8 +34,6 @@ celery_app.conf.update(
     # Re-deliver a task if the worker dies mid-run. Safe because processing is idempotent.
     task_acks_late=True,
     task_reject_on_worker_lost=True,
-    # Keep our JSON logging on the root logger instead of Celery's own format.
-    worker_hijack_root_logger=False,
     broker_connection_retry_on_startup=True,
     # Fail fast when publishing while Redis is down (the API then answers 503).
     broker_transport_options={"socket_connect_timeout": 1, "socket_timeout": 1},
