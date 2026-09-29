@@ -10,6 +10,9 @@ from app.db.models.base import Base, UUIDPrimaryKeyMixin
 
 
 class WebhookEventStatus(enum.StrEnum):
+    # Claimed by the in-flight processing transaction. A committed row is never in this state:
+    # if processing fails the transaction rolls back and the claim disappears with it.
+    PROCESSING = "PROCESSING"
     PROCESSED = "PROCESSED"  # applied to payment/booking
     IGNORED = "IGNORED"  # valid, recorded, but no state change was applicable (late/conflicting)
     FAILED = "FAILED"  # gave up after retries; kept for manual inspection/replay

@@ -1,5 +1,7 @@
 """Password hashing (Argon2id) and JWT helpers. No web/DB concerns live here."""
 
+import hashlib
+import hmac
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -49,3 +51,12 @@ def decode_access_token(token: str) -> str:
     except jwt.PyJWTError as exc:
         raise InvalidTokenError() from exc
     return str(claims["sub"])
+
+
+def sign_webhook_body(body: bytes, secret: str) -> str:
+    """Returns the header value: "sha256=<hex HMAC of the raw request body>"."""
+    return "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+
+
+def verify_webhook_signature_header(body: bytes, header_value: str, secret: str) -> bool:
+    return hmac.compare_digest(sign_webhook_body(body, secret), header_value)

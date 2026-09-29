@@ -7,7 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.exceptions import AppError
 from app.db.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
-from app.db.models.booking import Booking
+from app.db.models.booking import Booking, BookingStatus
 
 
 class PaymentStatus(enum.StrEnum):
@@ -54,6 +54,10 @@ class Payment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     failure_reason: Mapped[str | None] = mapped_column(String(255))
 
     booking: Mapped[Booking] = relationship()
+
+    @property
+    def booking_status(self) -> BookingStatus:
+        return self.booking.status
 
     def can_transition_to(self, new_status: PaymentStatus) -> bool:
         return new_status in ALLOWED_PAYMENT_TRANSITIONS[self.status]
