@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Secrets / local config (never commit real values; see .env.example)
+.env
+.env.*
+!.env.example
+
+# Celery beat schedule files
+celerybeat-schedule*
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
