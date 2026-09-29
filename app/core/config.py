@@ -1,10 +1,11 @@
 """Application settings, loaded from environment variables (12-factor style)."""
 
+import json
 from functools import lru_cache
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import Field, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 INSECURE_JWT_SECRETS = {"change-me", "changeme", "secret", ""}
 
@@ -16,7 +17,8 @@ class Settings(BaseSettings):
     app_name: str = "EVE Healthcare Diagnostic Booking API"
     environment: Literal["development", "test", "production"] = "development"
     log_level: str = "INFO"
-    cors_origins: list[str] = ["http://localhost:3000"]
+    # NoDecode: accept plain comma-separated env values (a1,a2) as well as JSON lists.
+    cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:3000"]
 
     # --- Infrastructure ----------------------------------------------------
     database_url: str = "postgresql+psycopg://eve:eve@localhost:5432/eve"
@@ -45,7 +47,7 @@ class Settings(BaseSettings):
     webhook_signature_required: bool = False
     webhook_max_retries: int = 5
     # Seconds to wait before retry N (1-indexed). Length must equal max_retries.
-    webhook_retry_backoff_seconds: list[int] = [1, 5, 15, 30, 60]
+    webhook_retry_backoff_seconds: Annotated[list[int], NoDecode] = [1, 5, 15, 30, 60]
 
     # --- Cache -------------------------------------------------------------
     cache_ttl_seconds: int = 60
@@ -61,9 +63,12 @@ class Settings(BaseSettings):
     @field_validator("cors_origins", "webhook_retry_backoff_seconds", mode="before")
     @classmethod
     def _split_csv(cls, value: object) -> object:
-        # Allow "a,b,c" in env files in addition to JSON lists.
-        if isinstance(value, str) and not value.strip().startswith("["):
-            return [item.strip() for item in value.split(",") if item.strip()]
+        # Env values arrive as raw strings (NoDecode): accept "a,b,c" as well as JSON '["a","b"]'.
+        if isinstance(value, str):
+            text = value.strip()
+            if text.startswith("["):
+                return json.loads(text)
+            return [item.strip() for item in text.split(",") if item.strip()]
         return value
 
     @model_validator(mode="after")

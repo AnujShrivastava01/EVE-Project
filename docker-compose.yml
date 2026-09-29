@@ -1,0 +1,93 @@
+# One command:  docker compose up --build
+# Everything below has a working development default; override via a .env file (see .env.example).
+
+x-app-environment: &app-environment
+  ENVIRONMENT: ${ENVIRONMENT:-development}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-eve}:${POSTGRES_PASSWORD:-eve}@postgres:5432/${POSTGRES_DB:-eve}
+  REDIS_URL: redis://redis:6379/0
+  JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-only-insecure-secret-change-me-before-deploying}
+  ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-60}
+  CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+  PAYMENT_SIMULATION_MODE: ${PAYMENT_SIMULATION_MODE:-success}
+  PAYMENT_ALLOW_SIMULATION_OVERRIDE: ${PAYMENT_ALLOW_SIMULATION_OVERRIDE:-true}
+  PAYMENT_STALE_AFTER_MINUTES: ${PAYMENT_STALE_AFTER_MINUTES:-15}
+  WEBHOOK_SECRET: ${WEBHOOK_SECRET:-dev-webhook-secret}
+  WEBHOOK_SIGNATURE_REQUIRED: ${WEBHOOK_SIGNATURE_REQUIRED:-false}
+  CACHE_TTL_SECONDS: ${CACHE_TTL_SECONDS:-60}
+  RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
+  RATE_LIMIT_AUTH_PER_WINDOW: ${RATE_LIMIT_AUTH_PER_WINDOW:-10}
+  RATE_LIMIT_PAYMENT_PER_WINDOW: ${RATE_LIMIT_PAYMENT_PER_WINDOW:-20}
+  RATE_LIMIT_WEBHOOK_PER_WINDOW: ${RATE_LIMIT_WEBHOOK_PER_WINDOW:-120}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-eve}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-eve}
+      POSTGRES_DB: ${POSTGRES_DB:-eve}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-eve} -d ${POSTGRES_DB:-eve}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: .
+    image: eve-booking-api:latest
+    command: ["/app/docker/entrypoint.sh", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
+    environment:
+      <<: *app-environment
+      RUN_MIGRATIONS: "true"
+      SEED_ON_STARTUP: ${SEED_ON_STARTUP:-true}
+    ports:
+      - "${API_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Celery worker: webhook retries (backoff) — shares the API image and settings.
+  worker:
+    build: .
+    image: eve-booking-api:latest
+    command: ["celery", "-A", "app.tasks.celery_app", "worker", "--loglevel=INFO", "--concurrency=2"]
+    environment: *app-environment
+    depends_on:
+      api:
+        condition: service_healthy   # migrations have been applied once the API is healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.tasks.celery_app inspect ping -d celery@$$HOSTNAME"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  # Celery beat: schedules the periodic stale-payment cleanup.
+  beat:
+    build: .
+    image: eve-booking-api:latest
+    command: ["celery", "-A", "app.tasks.celery_app", "beat", "--loglevel=INFO", "--schedule=/tmp/celerybeat-schedule"]
+    environment: *app-environment
+    healthcheck:
+      disable: true   # the image's HTTP healthcheck doesn't apply to beat
+    depends_on:
+      worker:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
