@@ -15,7 +15,12 @@ from typing import Any
 _log_context: ContextVar[dict[str, Any] | None] = ContextVar("log_context", default=None)
 
 # Attributes every LogRecord has; anything else was passed through `extra=` and is emitted.
-_STANDARD_RECORD_ATTRS = set(logging.makeLogRecord({}).__dict__) | {"message", "asctime"}
+# `color_message` is uvicorn's ANSI-colored duplicate of the message; it only adds noise.
+_STANDARD_RECORD_ATTRS = set(logging.makeLogRecord({}).__dict__) | {
+    "message",
+    "asctime",
+    "color_message",
+}
 
 
 def init_log_context(**values: Any) -> dict[str, Any]:
